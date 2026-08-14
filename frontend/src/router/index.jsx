@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { createBrowserRouter } from 'react-router-dom';
+import { Loader2, WifiOff, RefreshCcw } from 'lucide-react';
 
 import Layout from '../components/layout/Layout';
-import Auth from '../pages/Auth';
+import AdminLogin from '../pages/AdminLogin';
 import Dashboard from '../pages/Dashboard';
 import Converter from '../pages/Converter';
 import Batch from '../pages/Batch';
@@ -36,8 +36,32 @@ const Protected = ({ children }) => {
     };
   }, [ready]);
 
+  const retry = () => {
+    setFailed(false);
+    setReady(false);
+  };
+
   if (failed) {
-    return <Navigate to="/auth" replace />;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+        <div className="text-center max-w-sm">
+          <div className="mx-auto w-14 h-14 rounded-2xl bg-orange-100 flex items-center justify-center mb-4">
+            <WifiOff className="h-7 w-7 text-orange-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Couldn't start your session</h2>
+          <p className="text-sm text-gray-500 mb-6">
+            Our server is temporarily unreachable. Please try again in a moment.
+          </p>
+          <button
+            onClick={retry}
+            className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (!ready) {
@@ -56,8 +80,8 @@ const Protected = ({ children }) => {
 
 export const router = createBrowserRouter([
   {
-    path: '/auth',
-    element: <Auth />,
+    path: '/admin-login',
+    element: <AdminLogin />,
   },
   {
     path: '/',

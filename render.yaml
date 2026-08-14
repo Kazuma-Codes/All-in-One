@@ -5,6 +5,7 @@ services:
     rootDir: backend
     plan: free
     healthCheckPath: /api/v1/health
+    preDeployCommand: alembic upgrade head
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -18,13 +19,24 @@ services:
         sync: false
       - key: S3_BUCKET_NAME
         sync: false
+      - key: S3_REGION
+        sync: false
       - key: SECRET_KEY
         generateValue: true
+      - key: APP_ENV
+        value: production
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
 
   - type: worker
     name: universal-converter-worker
     env: docker
-    rootDir: worker
+    rootDir: .
+    dockerfilePath: worker/Dockerfile
     plan: free
     envVars:
       - key: DATABASE_URL
@@ -38,6 +50,8 @@ services:
       - key: S3_SECRET_KEY
         sync: false
       - key: S3_BUCKET_NAME
+        sync: false
+      - key: S3_REGION
         sync: false
       - key: BACKEND_PATH
         value: /backend

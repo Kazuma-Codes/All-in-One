@@ -1,4 +1,6 @@
-import os
+from contextlib import asynccontextmanager
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,9 +11,32 @@ from .api.v1.router import api_router
 from .core.rate_limit import limiter
 from .core.observability import init_sentry
 from .core.config import settings
+from .core.database import SessionLocal
+from .core.bootstrap import ensure_admin_user
+
+logger = logging.getLogger("universal-converter")
+
+if settings.APP_ENV == "production" and settings.SECRET_KEY == "super-secret-key-change-in-prod":
+    raise RuntimeError(
+        "SECRET_KEY is the insecure default. Set a strong SECRET_KEY before running in production."
+    )
 
 init_sentry()
-app = FastAPI(title="Universal Converter API")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    db = SessionLocal()
+    try:
+        message = ensure_admin_user(db)
+        if message:
+            logger.warning(message)
+    finally:
+        db.close()
+    yield
+
+
+app = FastAPI(title="Universal Converter API", lifespan=lifespan)
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)

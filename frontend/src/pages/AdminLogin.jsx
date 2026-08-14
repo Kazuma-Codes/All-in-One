@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, ArrowRight } from 'lucide-react';
+import { Lock, ArrowRight } from 'lucide-react';
 import { login } from '../api/auth';
 
-const Auth = () => {
+const AdminLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -18,9 +18,9 @@ const Auth = () => {
 
     try {
       await login(email, password);
-      navigate('/');
+      navigate('/admin');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Authentication failed. Please check your credentials.');
+      setError(err.response?.data?.detail || 'Login failed. Check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -30,14 +30,14 @@ const Auth = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-sm border border-gray-200">
         <div className="flex items-center justify-center gap-2 mb-6">
-          <div className="bg-blue-600 text-white p-2 rounded-xl">
-            <RefreshCw className="h-6 w-6" />
+          <div className="bg-gray-900 text-white p-2 rounded-xl">
+            <Lock className="h-6 w-6" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Universal Converter</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Admin Access</h1>
         </div>
 
         <p className="text-sm text-gray-500 text-center mb-6">
-          Sign in to manage the platform. Guests are created automatically — no account needed.
+          Restricted area for platform administrators.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -74,7 +74,7 @@ const Auth = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 disabled:bg-gray-300 transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-gray-900 text-white py-3 rounded-xl font-semibold hover:bg-gray-800 disabled:bg-gray-300 transition-colors flex items-center justify-center gap-2"
           >
             {loading ? 'Please wait...' : 'Sign In'}
             {!loading && <ArrowRight className="h-4 w-4" />}
@@ -93,4 +93,4 @@ const Auth = () => {
   );
 };
 
-export default Auth;
+export default AdminLogin;

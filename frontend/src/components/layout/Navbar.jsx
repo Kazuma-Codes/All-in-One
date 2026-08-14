@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
-import { RefreshCw, LogOut, Shield, LogIn } from 'lucide-react';
+import { RefreshCw, LogOut, Shield } from 'lucide-react';
 import { logout } from '../../api/auth';
 import { getMe } from '../../api/users';
 
@@ -30,7 +30,8 @@ const Navbar = () => {
 
   const handleLogout = () => {
     logout();
-    navigate('/auth');
+    setIsAdmin(false);
+    navigate('/');
   };
 
   const navLinkClass = ({ isActive }) =>
@@ -66,15 +67,7 @@ const Navbar = () => {
             </NavLink>
           )}
 
-          {checked && !isAdmin ? (
-            <Link
-              to="/auth"
-              className="flex items-center gap-1.5 ml-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              <LogIn className="h-4 w-4" />
-              <span className="hidden sm:inline">Sign in</span>
-            </Link>
-          ) : (
+          {checked && isAdmin && (
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 ml-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
