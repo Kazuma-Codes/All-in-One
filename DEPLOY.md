@@ -11,7 +11,7 @@ Stack:
 1. Create a free project at supabase.com (e.g. `your-converter`).
 2. Database → Connection string → **Session pooler / direct** (port `5432`, NOT transaction pooler `6543` — Alembic DDL fails on the transaction pooler).
 3. Use the `postgresql://postgres.<ref>:<password>@...:5432/postgres` URL (plain `postgresql://...` is fine — the backend auto-normalizes it to the psycopg driver).
-4. You do **not** need to create tables: Render's `preDeployCommand: alembic upgrade head` creates/updates the schema on every deploy.
+4. You do **not** need to create tables: the backend Docker image runs `alembic upgrade head` automatically before uvicorn starts (free-plan safe — no pre-deploy command needed). You'll see `Running upgrade -> 0001, initial schema` in the deploy logs.
 
 ## 2. Tigris (object storage)
 
