@@ -18,10 +18,6 @@ services:
         sync: false
       - key: S3_BUCKET_NAME
         sync: false
-      - key: S3_REGION
-        value: auto
-      - key: CORS_ORIGINS
-        value: "*"
       - key: SECRET_KEY
         generateValue: true
 
@@ -43,8 +39,6 @@ services:
         sync: false
       - key: S3_BUCKET_NAME
         sync: false
-      - key: S3_REGION
-        value: auto
       - key: BACKEND_PATH
         value: /backend
       - key: PYTHONPATH

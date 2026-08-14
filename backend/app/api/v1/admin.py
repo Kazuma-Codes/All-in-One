@@ -9,7 +9,7 @@ from ...models.job import Job
 from ...models.file import File
 from ...models.conversion import Conversion
 from ...models.usage import Usage
-from ..deps import get_current_user, get_current_admin
+from .deps import get_current_user, get_current_admin
 
 router = APIRouter()
 
