@@ -1,34 +1,42 @@
 import os
-import sys
-import tempfile
 import shutil
+import tempfile
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta
-from celery import shared_task
-from celery.exceptions import MaxRetriesExceededError
 
-# Allow worker to import backend models
-BACKEND_PATH = os.environ.get("BACKEND_PATH", "/backend")
-if BACKEND_PATH not in sys.path:
-    sys.path.insert(0, BACKEND_PATH)
+from sqlalchemy.orm import Session
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from ..core.config import settings
+from ..core.database import SessionLocal
+from ..core.storage import s3_client
+from ..models.file import File
+from ..models.job import Job
+from ..models.usage import Usage
 
-from app.core.config import settings
-from app.core.storage import s3_client
-from app.models.job import Job
-from app.models.file import File
-from app.models.usage import Usage
-
-# Fixed imports: PDFCompressor is in pdf/compress.py, OfficeToPDFConverter in document/
 from ..converters.image.convert import ImageConverter
 from ..converters.pdf.compress import PDFCompressor
 from ..converters.pdf.merge import PDFMerger
 from ..converters.pdf.split import PDFSplitter
 from ..converters.document.office_to_pdf import OfficeToPDFConverter
 
-engine = create_engine(settings.DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
+conversion_slots = threading.BoundedSemaphore(settings.MAX_CONCURRENT_JOBS)
+
+
+class ConversionBusyError(Exception):
+    pass
+
+
+@contextmanager
+def acquire_slot():
+    if not conversion_slots.acquire(blocking=False):
+        raise ConversionBusyError(
+            f"Too many conversions running right now (max {settings.MAX_CONCURRENT_JOBS}). Try again in a moment."
+        )
+    try:
+        yield
+    finally:
+        conversion_slots.release()
 
 
 def download_from_storage(storage_key: str, tmp_dir: str) -> str:
@@ -52,7 +60,7 @@ def upload_to_storage(local_path: str, storage_key: str):
     )
 
 
-def update_usage(db, user_id: int, file_size: int, seconds: float):
+def update_usage(db: Session, user_id: int, file_size: int, seconds: float):
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
     usage = db.query(Usage).filter(
@@ -77,8 +85,8 @@ def update_usage(db, user_id: int, file_size: int, seconds: float):
     db.commit()
 
 
-@shared_task(name="worker.process_conversion", bind=True, max_retries=2)
-def process_conversion(self, job_id: int):
+def process_conversion(job_id: int) -> str:
+    """Convert a job inline. Returns the final job status."""
     db = SessionLocal()
     tmp_dir = tempfile.mkdtemp()
     start_time = datetime.utcnow()
@@ -87,7 +95,18 @@ def process_conversion(self, job_id: int):
         job = db.query(Job).filter(Job.id == job_id).first()
 
         if not job:
-            return
+            return "NOT_FOUND"
+
+        if job.status in ("COMPLETED", "CANCELLED", "FAILED"):
+            return job.status
+
+        max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+        if job.input_file and job.input_file.size > max_bytes:
+            job.status = "FAILED"
+            job.error_message = f"File exceeds the {settings.MAX_FILE_SIZE_MB} MB limit"
+            job.completed_at = datetime.utcnow()
+            db.commit()
+            return job.status
 
         job.status = "PROCESSING"
         job.started_at = datetime.utcnow()
@@ -106,9 +125,7 @@ def process_conversion(self, job_id: int):
             input_path = download_from_storage(job.input_file.storage_key, tmp_dir)
             output_path = os.path.join(tmp_dir, "output.png")
 
-            converter = ImageConverter()
-            success = converter.execute(input_path, output_path, {"target_format": "PNG"})
-
+            success = ImageConverter().execute(input_path, output_path, {"target_format": "PNG"})
             if not success:
                 raise Exception("Image conversion failed")
 
@@ -120,9 +137,7 @@ def process_conversion(self, job_id: int):
             input_path = download_from_storage(job.input_file.storage_key, tmp_dir)
             output_path = os.path.join(tmp_dir, "output.jpg")
 
-            converter = ImageConverter()
-            success = converter.execute(input_path, output_path, {"target_format": "JPEG"})
-
+            success = ImageConverter().execute(input_path, output_path, {"target_format": "JPEG"})
             if not success:
                 raise Exception("Image conversion failed")
 
@@ -134,9 +149,7 @@ def process_conversion(self, job_id: int):
             input_path = download_from_storage(job.input_file.storage_key, tmp_dir)
             output_path = os.path.join(tmp_dir, "compressed.pdf")
 
-            converter = PDFCompressor()
-            success = converter.execute(input_path, output_path, {})
-
+            success = PDFCompressor().execute(input_path, output_path, {})
             if not success:
                 raise Exception("PDF compression failed")
 
@@ -150,15 +163,10 @@ def process_conversion(self, job_id: int):
             if len(input_keys) < 2:
                 raise Exception("Merge requires at least 2 files")
 
-            local_paths = []
-            for key in input_keys:
-                local_paths.append(download_from_storage(key, tmp_dir))
-
+            local_paths = [download_from_storage(key, tmp_dir) for key in input_keys]
             output_path = os.path.join(tmp_dir, "merged.pdf")
 
-            converter = PDFMerger()
-            success = converter.execute(local_paths, output_path, {})
-
+            success = PDFMerger().execute(local_paths, output_path, {})
             if not success:
                 raise Exception("PDF merge failed")
 
@@ -170,9 +178,7 @@ def process_conversion(self, job_id: int):
             input_path = download_from_storage(job.input_file.storage_key, tmp_dir)
             output_path = os.path.join(tmp_dir, "split_pages.zip")
 
-            converter = PDFSplitter()
-            success = converter.execute(input_path, output_path, {})
-
+            success = PDFSplitter().execute(input_path, output_path, {})
             if not success:
                 raise Exception("PDF split failed")
 
@@ -184,9 +190,7 @@ def process_conversion(self, job_id: int):
             input_path = download_from_storage(job.input_file.storage_key, tmp_dir)
             output_path = os.path.join(tmp_dir, "converted.pdf")
 
-            converter = OfficeToPDFConverter()
-            success = converter.execute(input_path, output_path, {})
-
+            success = OfficeToPDFConverter().execute(input_path, output_path, {})
             if not success:
                 raise Exception("Document conversion failed")
 
@@ -228,20 +232,41 @@ def process_conversion(self, job_id: int):
         processing_seconds = (datetime.utcnow() - start_time).total_seconds()
         update_usage(db, job.user_id, os.path.getsize(output_path), processing_seconds)
 
+        return job.status
+
     except Exception as exc:
         db.rollback()
 
         job = db.query(Job).filter(Job.id == job_id).first()
 
         if job:
-            try:
-                # Only mark as permanently FAILED if we've exhausted retries
-                self.retry(exc=exc, countdown=30)
-            except MaxRetriesExceededError:
-                job.status = "FAILED"
-                job.error_message = str(exc)
-                db.commit()
+            job.status = "FAILED"
+            job.error_message = str(exc)
+            job.completed_at = datetime.utcnow()
+            db.commit()
+
+        return "FAILED"
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+        db.close()
+
+
+def repair_stale_jobs():
+    """Mark jobs left QUEUED/PROCESSING by a previous process as FAILED."""
+    db = SessionLocal()
+
+    try:
+        stale = db.query(Job).filter(
+            Job.status.in_(["QUEUED", "PROCESSING"]),
+            Job.created_at < datetime.utcnow() - timedelta(hours=1)
+        ).all()
+
+        for job in stale:
+            job.status = "FAILED"
+            job.error_message = "Interrupted by a server restart"
+
+        if stale:
+            db.commit()
+    finally:
         db.close()

@@ -112,7 +112,7 @@ const Converter = () => {
               ? 'Drop multiple PDF files here for merging'
               : 'Drag & drop a file, or click to browse'}
           </p>
-          <p className="text-xs text-gray-400 mt-1">Supports images, documents, and archives up to 250MB</p>
+          <p className="text-xs text-gray-400 mt-1">Supports images, documents, and PDFs up to 25MB</p>
         </div>
 
         {files.length > 0 && (

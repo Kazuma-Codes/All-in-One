@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List
 
+from ...core.config import settings
 from ...core.database import get_db
-from ...core.celery_client import celery_client
 from ...core.rate_limit import limiter
 from ...core.storage import generate_presigned_download_url
 from ...models.user import User
@@ -12,9 +12,20 @@ from ...models.job import Job
 from ...models.conversion import Conversion
 from ...schemas.job import JobCreateRequest, JobOut
 from ...services.registry import CONVERSION_REGISTRY
+from ...services.conversion import acquire_slot, process_conversion, ConversionBusyError
 from .deps import get_current_user
 
 router = APIRouter()
+
+
+def check_file_size(file: File):
+    max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+
+    if file.size > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds the {settings.MAX_FILE_SIZE_MB} MB limit"
+        )
 
 
 @router.post("/", response_model=JobOut)
@@ -47,6 +58,9 @@ def create_job(
         if len(files) != len(payload.input_file_ids):
             raise HTTPException(status_code=400, detail="One or more input files not found")
 
+        for file in files:
+            check_file_size(file)
+
         input_keys = [f.storage_key for f in files]
         input_file = files[0]
         options["input_keys"] = input_keys
@@ -63,6 +77,8 @@ def create_job(
 
         if not input_file:
             raise HTTPException(status_code=400, detail="Input file not found")
+
+        check_file_size(input_file)
 
     job = Job(
         user_id=current_user.id,
@@ -88,7 +104,13 @@ def create_job(
     db.add(conversion)
     db.commit()
 
-    celery_client.send_task("worker.process_conversion", args=[job.id])
+    try:
+        with acquire_slot():
+            process_conversion(job.id)
+    except ConversionBusyError as exc:
+        job.status = "CANCELLED"
+        db.commit()
+        raise HTTPException(status_code=429, detail=str(exc))
 
     return job
 

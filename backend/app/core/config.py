@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     DATABASE_URL: str
-    REDIS_URL: str
+    REDIS_URL: str | None = None
     S3_ENDPOINT: str
     S3_ACCESS_KEY: str
     S3_SECRET_KEY: str
@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     ADMIN_EMAIL: str | None = None
     ADMIN_PASSWORD: str | None = None
+
+    MAX_CONCURRENT_JOBS: int = 2
+    MAX_FILE_SIZE_MB: int = 25
 
     @model_validator(mode="after")
     def normalize_database_url(self):

@@ -3,14 +3,15 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
+from ...core.config import settings
 from ...core.database import get_db
-from ...core.celery_client import celery_client
 from ...core.rate_limit import limiter
 from ...models.user import User
 from ...models.file import File
 from ...models.job import Job
 from ...models.conversion import Conversion
 from ...services.registry import CONVERSION_REGISTRY
+from ...services.conversion import acquire_slot, process_conversion, ConversionBusyError
 from .deps import get_current_user
 
 router = APIRouter()
@@ -42,6 +43,15 @@ def create_batch(
     if len(files) != len(payload.file_ids):
         raise HTTPException(status_code=400, detail="Some files were not found")
 
+    max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+    oversized = [f.filename for f in files if f.size > max_bytes]
+
+    if oversized:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Files exceed the {settings.MAX_FILE_SIZE_MB} MB limit: {', '.join(oversized[:3])}"
+        )
+
     job_ids = []
     meta = CONVERSION_REGISTRY[payload.operation]
 
@@ -72,8 +82,14 @@ def create_batch(
 
     db.commit()
 
-    for job_id in job_ids:
-        celery_client.send_task("worker.process_conversion", args=[job_id])
+    try:
+        with acquire_slot():
+            for job_id in job_ids:
+                process_conversion(job_id)
+    except ConversionBusyError as exc:
+        db.query(Job).filter(Job.id.in_(job_ids)).update({"status": "CANCELLED"})
+        db.commit()
+        raise HTTPException(status_code=429, detail=str(exc))
 
     return {
         "job_ids": job_ids,

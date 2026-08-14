@@ -1,53 +1,30 @@
-import os
-import sys
 from datetime import datetime, timedelta
-from celery import shared_task
 
-BACKEND_PATH = os.environ.get("BACKEND_PATH", "/backend")
-if BACKEND_PATH not in sys.path:
-    sys.path.insert(0, BACKEND_PATH)
+from sqlalchemy.orm import Session
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.core.config import settings
-from app.core.storage import s3_client, delete_object
-from app.models.user import User
-from app.models.file import File
-from app.models.job import Job
-from app.models.conversion import Conversion
-from app.models.usage import Usage
-
-engine = create_engine(settings.DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
+from ..core.config import settings
+from ..core.database import SessionLocal
+from ..core.storage import delete_object
+from ..models.conversion import Conversion
+from ..models.file import File
+from ..models.job import Job
+from ..models.usage import Usage
+from ..models.user import User
 
 
-@shared_task(name="worker.cleanup_expired_files")
-def cleanup_expired_files():
-    db = SessionLocal()
+def delete_expired_files(db: Session, now: datetime):
+    expired_files = db.query(File).filter(
+        File.expires_at != None,
+        File.expires_at < now,
+        File.status == "UPLOADED"
+    ).all()
 
-    try:
-        now = datetime.utcnow()
-
-        expired_files = db.query(File).filter(
-            File.expires_at != None,
-            File.expires_at < now,
-            File.status == "UPLOADED"
-        ).all()
-
-        for file in expired_files:
-            delete_object(file.storage_key)
-            file.status = "EXPIRED"
-
-        purge_guests(db, now)
-
-        db.commit()
-
-    finally:
-        db.close()
+    for file in expired_files:
+        delete_object(file.storage_key)
+        file.status = "EXPIRED"
 
 
-def purge_guests(db, now: datetime):
+def purge_guests(db: Session, now: datetime):
     threshold = now - timedelta(days=settings.GUEST_PURGE_DAYS)
 
     guest_users = db.query(User).filter(
@@ -86,3 +63,15 @@ def purge_guests(db, now: datetime):
         db.query(Usage).filter(Usage.user_id == user.id).delete(synchronize_session=False)
 
         db.delete(user)
+
+
+def run_cleanup():
+    db = SessionLocal()
+
+    try:
+        now = datetime.utcnow()
+        delete_expired_files(db, now)
+        purge_guests(db, now)
+        db.commit()
+    finally:
+        db.close()

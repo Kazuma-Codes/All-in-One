@@ -2,62 +2,52 @@ CONVERSION_REGISTRY = {
     "image.jpg_to_png": {
         "category": "image",
         "source_format": "jpg",
-        "target_format": "png",
-        "worker_task": "worker.process_conversion"
+        "target_format": "png"
     },
     "image.png_to_jpg": {
         "category": "image",
         "source_format": "png",
-        "target_format": "jpg",
-        "worker_task": "worker.process_conversion"
+        "target_format": "jpg"
     },
     "image.ocr_to_text": {
         "category": "image",
         "source_format": "image",
-        "target_format": "txt",
-        "worker_task": "worker.process_conversion"
+        "target_format": "txt"
     },
     "pdf.compress": {
         "category": "pdf",
         "source_format": "pdf",
-        "target_format": "pdf",
-        "worker_task": "worker.process_conversion"
+        "target_format": "pdf"
     },
     "pdf.merge": {
         "category": "pdf",
         "source_format": "pdf",
-        "target_format": "pdf",
-        "worker_task": "worker.process_conversion"
+        "target_format": "pdf"
     },
     "pdf.split": {
         "category": "pdf",
         "source_format": "pdf",
-        "target_format": "zip",
-        "worker_task": "worker.process_conversion"
+        "target_format": "zip"
     },
     "pdf.ocr": {
         "category": "pdf",
         "source_format": "pdf",
-        "target_format": "pdf",
-        "worker_task": "worker.process_conversion"
+        "target_format": "pdf"
     },
     "document.docx_to_pdf": {
         "category": "document",
         "source_format": "docx",
-        "target_format": "pdf",
-        "worker_task": "worker.process_conversion"
+        "target_format": "pdf"
     },
     "audio.to_mp3": {
         "category": "audio",
         "source_format": "audio",
-        "target_format": "mp3",
-        "worker_task": "worker.process_conversion"
+        "target_format": "mp3"
     },
     "audio.to_wav": {
         "category": "audio",
         "source_format": "audio",
-        "target_format": "wav",
-        "worker_task": "worker.process_conversion"
+        "target_format": "wav"
     }
 }
 

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 
 from fastapi import FastAPI
@@ -13,6 +14,8 @@ from .core.observability import init_sentry
 from .core.config import settings
 from .core.database import SessionLocal
 from .core.bootstrap import ensure_admin_user
+from .services.cleanup import run_cleanup
+from .services.conversion import repair_stale_jobs
 
 logger = logging.getLogger("universal-converter")
 
@@ -24,16 +27,42 @@ if settings.APP_ENV == "production" and settings.SECRET_KEY == "super-secret-key
 init_sentry()
 
 
+async def cleanup_loop():
+    while True:
+        await asyncio.sleep(3600)
+
+        try:
+            await asyncio.to_thread(run_cleanup)
+        except Exception:
+            logger.exception("Periodic cleanup failed")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db = SessionLocal()
     try:
+        repair_stale_jobs()
         message = ensure_admin_user(db)
         if message:
             logger.warning(message)
     finally:
         db.close()
+
+    try:
+        await asyncio.to_thread(run_cleanup)
+    except Exception:
+        logger.exception("Initial cleanup failed")
+
+    cleanup_task = asyncio.create_task(cleanup_loop())
+
     yield
+
+    cleanup_task.cancel()
+
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="Universal Converter API", lifespan=lifespan)
